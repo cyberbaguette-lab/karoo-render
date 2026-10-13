@@ -1,0 +1,15 @@
+{
+  "name": "karoo-render",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rendu isole des generateurs Express de Karoo (Chromium hors ligne).",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.56.1"
+  }
+}

@@ -1,0 +1,19 @@
+# karoo-render sur Vercel (conteneur). Image Playwright epinglee : sa version
+# doit rester celle de playwright-core dans package.json (Chromium fourni).
+FROM mcr.microsoft.com/playwright:v1.56.1-noble
+
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund
+COPY server.mjs ./
+
+# Vercel donne le port dans $PORT : le serveur l'ecoute des le demarrage,
+# Chromium se lance en arriere-plan (jamais plus de ~28 s sans port ouvert).
+ENV NODE_ENV=production
+# Jamais root : l'image Playwright fournit « pwuser ». Le bac a sable de
+# Chromium reste coupe par defaut (CHROMIUM_SANDBOX=1 pour l'activer si
+# l'hote autorise les espaces de noms utilisateur).
+RUN chown -R pwuser:pwuser /app
+USER pwuser
+EXPOSE 4000
+CMD ["node", "server.mjs"]
