@@ -107,4 +107,11 @@ test("une slide ne transporte que des donnees bornees", () => {
   assert.equal(slide.n, 3);
   assert.equal(cleanSlide({ photo: "data:image/png;base64,AAAA" }).photo, "data:image/png;base64,AAAA");
   assert.deepEqual(cleanBrand({ name: "K", accent: "red;}" }), { name: "K", accent: null });
+  // Contexte pose par Karoo : avatar en image seulement, zones sures en nombres.
+  const context = cleanSlide({ karooAvatar: "data:image/jpeg;base64,AAAA", karooSafeTop: 250, karooHandle: "@karoo" });
+  assert.equal(context.karooAvatar, "data:image/jpeg;base64,AAAA");
+  assert.equal(context.karooSafeTop, 250);
+  assert.equal(context.karooHandle, "@karoo");
+  assert.equal(cleanSlide({ karooAvatar: "https://example.com/a.png" }).karooAvatar, undefined);
+  assert.equal(cleanSlide({ karooAvatar: "data:image/svg+xml;base64,AAAA" }).karooAvatar, undefined);
 });

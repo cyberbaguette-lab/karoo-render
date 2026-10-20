@@ -110,6 +110,7 @@ async function mapPool(items, size, fn) {
 // ------------------------------------------------------------- entrees
 const MAX_TEXT = 600;
 const MAX_ITEMS = 8;
+const MAX_AVATAR = 400_000;
 
 /** Les champs d'une slide : chaines, listes de chaines, nombres, booleens,
  *  et `photo` en data URL d'image. Rien d'executable, tout borne. */
@@ -120,6 +121,11 @@ export function cleanSlide(raw) {
     if (!/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(key)) continue;
     if (key === "photo") {
       if (typeof value === "string" && /^data:image\/(png|jpeg|webp);base64,/.test(value)) slide.photo = value;
+      continue;
+    }
+    // Avatar du compte (photo de profil Instagram), pose par Karoo : une image, 300 Ko au plus.
+    if (key === "karooAvatar") {
+      if (typeof value === "string" && value.length <= MAX_AVATAR && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value)) slide.karooAvatar = value;
       continue;
     }
     if (typeof value === "string") slide[key] = value.slice(0, MAX_TEXT);
