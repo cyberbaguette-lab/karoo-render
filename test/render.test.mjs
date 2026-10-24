@@ -115,3 +115,57 @@ test("une slide ne transporte que des donnees bornees", () => {
   assert.equal(cleanSlide({ karooAvatar: "https://example.com/a.png" }).karooAvatar, undefined);
   assert.equal(cleanSlide({ karooAvatar: "data:image/svg+xml;base64,AAAA" }).karooAvatar, undefined);
 });
+
+// ---------------------------------------------------------------- videos
+// Un generateur minimal qui expose une animation (comme motion.ts dans Karoo).
+const ANIMATED = `window.KAROO_GENERATOR = { blocks: {}, render: async function (root, slide) {
+  root.style.background = "#222";
+  var box = document.createElement("div");
+  box.textContent = slide.title || "Bonjour";
+  box.setAttribute("style", "position:absolute;left:100px;top:600px;color:#fff;font-size:90px");
+  root.appendChild(box);
+  if (slide.karooMotion) {
+    var a = box.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, fill: "both" });
+    a.pause();
+    window.KAROO_MOTION = { duration: 600, seek: function (t) { a.currentTime = t; } };
+  }
+} };`;
+
+const postVideo = (body) => fetch(`${base}/render-video`, {
+  method: "POST",
+  headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+  body: JSON.stringify(body)
+});
+
+test("video : depots https obligatoires, animation obligatoire", async () => {
+  assert.equal((await postVideo({ generator: ANIMATED, slides: [{ karooMotion: "doux" }], uploads: [] })).status, 400);
+  assert.equal((await postVideo({ generator: ANIMATED, slides: [{ karooMotion: "doux" }], uploads: ["http://127.0.0.1:1/x"] })).status, 400);
+  assert.equal((await postVideo({ generator: ANIMATED, slides: [{}], uploads: ["https://exemple.test/x"] })).status, 400);
+});
+
+test("video : un MP4 par ecran, depose a son adresse", async (t) => {
+  const ffmpeg = (await import("node:child_process")).spawnSync(process.env.FFMPEG_PATH || "ffmpeg", ["-version"]);
+  if (ffmpeg.status !== 0) { t.skip("ffmpeg absent"); return; }
+  const http = await import("node:http");
+  const received = [];
+  const sink = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => { received.push({ url: req.url, type: req.headers["content-type"], body: Buffer.concat(chunks) }); res.end("{}"); });
+  });
+  await new Promise((resolve) => sink.listen(0, "127.0.0.1", resolve));
+  process.env.RENDER_UPLOAD_INSECURE = "1";
+  try {
+    const at = `http://127.0.0.1:${sink.address().port}`;
+    const response = await postVideo({ format: "story", generator: ANIMATED, slides: [{ title: "Un", karooMotion: "doux" }, { title: "Deux", karooMotion: "mot" }], uploads: [`${at}/a.mp4`, `${at}/b.mp4`] });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.videos.map((v) => v.index), [0, 1]);
+    assert.ok(body.videos.every((v) => v.duration > 0 && v.bytes > 1000));
+    assert.deepEqual(received.map((r) => r.url).sort(), ["/a.mp4", "/b.mp4"]);
+    assert.ok(received.every((r) => r.type === "video/mp4" && r.body.subarray(4, 8).toString() === "ftyp"));
+  } finally {
+    delete process.env.RENDER_UPLOAD_INSECURE;
+    await new Promise((resolve) => sink.close(resolve));
+  }
+});

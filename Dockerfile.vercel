@@ -2,6 +2,9 @@
 # doit rester celle de playwright-core dans package.json (Chromium fourni).
 FROM mcr.microsoft.com/playwright:v1.56.1-noble
 
+# ffmpeg : les stories animees (une video MP4 par ecran, H.264).
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund

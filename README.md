@@ -41,6 +41,25 @@ le reste ; il est fait pour être déplacé tel quel dans son propre dépôt
 Réponse : `{ ms, width, height, slides: [{ index, png (base64), ms }] }`.
 Erreurs : 401 (jeton), 400 (entrées), 422 (le générateur a échoué), 500.
 
+### Stories animées : `POST /render-video`
+
+Même jeton, même corps que `/render`, plus `uploads` : une adresse de dépôt
+signée (Supabase Storage, `https`) par écran. Chaque écran porte
+`karooMotion` (l'animation, un mot-clé) et, pour une formule sans Export HD,
+`karooOverlay` (le filigrane, PNG en data URL). Le script d'animation arrive
+avec le générateur (`motion.ts` dans Karoo) et expose
+`window.KAROO_MOTION = { duration, seek(ms) }` : le service fige chaque image
+à son instant (30 i/s, `RENDER_VIDEO_FPS`), l'encode avec **ffmpeg** (H.264,
+son muet AAC, `faststart`) et dépose le MP4 à l'adresse de l'écran.
+
+Réponse légère : `{ ms, fps, width, height, videos: [{ index, duration, bytes, ms }] }`.
+Charge : `RENDER_VIDEO_MAX_JOBS` (1) demande à la fois, `RENDER_VIDEO_CONCURRENCY`
+(2) écrans en parallèle, `RENDER_VIDEO_TIMEOUT_MS` (120 s) par écran.
+
+**À redéployer** pour activer les stories animées : le `Dockerfile.vercel`
+installe désormais ffmpeg. Sans ce redéploiement, Karoo publie les stories
+animées en images (avec un avertissement) : rien ne casse.
+
 ## Déployer sur Vercel
 
 1. Dépôt GitHub `karoo-render` avec le contenu de ce dossier.
