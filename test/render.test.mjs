@@ -169,3 +169,33 @@ test("video : un MP4 par ecran, depose a son adresse", async (t) => {
     await new Promise((resolve) => sink.close(resolve));
   }
 });
+
+test("video assemblee : les ecrans bout a bout, deposee a son adresse", async (t) => {
+  const ffmpeg = (await import("node:child_process")).spawnSync(process.env.FFMPEG_PATH || "ffmpeg", ["-version"]);
+  if (ffmpeg.status !== 0) { t.skip("ffmpeg absent"); return; }
+  const http = await import("node:http");
+  const stored = new Map();
+  const sink = http.createServer((req, res) => {
+    if (req.method === "GET") { const body = stored.get(req.url); if (!body) { res.statusCode = 404; res.end(); return; } res.setHeader("content-type", "video/mp4"); res.end(body); return; }
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => { stored.set(req.url, Buffer.concat(chunks)); res.end("{}"); });
+  });
+  await new Promise((resolve) => sink.listen(0, "127.0.0.1", resolve));
+  process.env.RENDER_UPLOAD_INSECURE = "1";
+  try {
+    const at = `http://127.0.0.1:${sink.address().port}`;
+    const made = await postVideo({ format: "story", generator: ANIMATED, slides: [{ title: "Un", karooMotion: "doux" }, { title: "Deux", karooMotion: "doux" }], uploads: [`${at}/a.mp4`, `${at}/b.mp4`] });
+    assert.equal(made.status, 200);
+    const response = await fetch(`${base}/join-video`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer test-token" }, body: JSON.stringify({ inputs: [`${at}/a.mp4`, `${at}/b.mp4`], upload: `${at}/story.mp4` }) });
+    assert.equal(response.status, 200);
+    const joined = stored.get("/story.mp4");
+    assert.ok(joined && joined.subarray(4, 8).toString() === "ftyp");
+    assert.ok(joined.length > stored.get("/a.mp4").length);
+    const bad = await fetch(`${base}/join-video`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer test-token" }, body: JSON.stringify({ inputs: [], upload: `${at}/x.mp4` }) });
+    assert.equal(bad.status, 400);
+  } finally {
+    delete process.env.RENDER_UPLOAD_INSECURE;
+    await new Promise((resolve) => sink.close(resolve));
+  }
+});
