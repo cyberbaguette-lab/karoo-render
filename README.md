@@ -53,6 +53,11 @@ avec le générateur (`motion.ts` dans Karoo) et expose
 son muet AAC, `faststart`) et dépose le MP4 à l'adresse de l'écran.
 
 Réponse légère : `{ ms, fps, width, height, videos: [{ index, duration, bytes, ms }] }`.
+
+`POST /join-video` (même jeton) : `inputs` (les adresses signées des vidéos
+des écrans, `https`) et `upload` (l'adresse de dépôt) : les vidéos mises bout
+à bout sans réencodage (ffmpeg concat), pour télécharger la story entière en
+un MP4. Réponse : `{ ms, bytes }`.
 Charge : `RENDER_VIDEO_MAX_JOBS` (1) demande à la fois, `RENDER_VIDEO_CONCURRENCY`
 (2) écrans en parallèle, `RENDER_VIDEO_TIMEOUT_MS` (120 s) par écran.
 

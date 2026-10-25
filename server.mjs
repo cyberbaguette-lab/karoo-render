@@ -13,7 +13,7 @@
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
@@ -376,10 +376,64 @@ async function handleVideo(request, response) {
   }
 }
 
+const MAX_JOIN_BYTES = 60 * 1024 * 1024;
+
+/** Les videos des ecrans mises bout a bout, sans reencodage (memes reglages : ffmpeg concat). */
+async function joinVideos(inputs) {
+  const dir = await mkdtemp(join(tmpdir(), "karoo-join-"));
+  try {
+    const names = [];
+    for (const [index, url] of inputs.entries()) {
+      const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+      if (!response.ok) throw new Error(`video ${index + 1} : HTTP ${response.status}`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length > MAX_JOIN_BYTES || bytes.subarray(4, 8).toString() !== "ftyp") throw new Error(`video ${index + 1} illisible`);
+      const name = join(dir, `${String(index).padStart(2, "0")}.mp4`);
+      await writeFile(name, bytes);
+      names.push(name);
+    }
+    const list = join(dir, "liste.txt");
+    await writeFile(list, names.map((name) => `file '${name}'`).join("\n"));
+    const out = join(dir, "story.mp4");
+    await new Promise((resolve, reject) => {
+      const child = spawn(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", "-y", out], { stdio: ["ignore", "ignore", "pipe"] });
+      let err = "";
+      child.stderr.on("data", (chunk) => { err += chunk.toString().slice(0, 500); });
+      child.on("error", reject);
+      child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg ${code} : ${err.slice(0, 200)}`))));
+    });
+    return await readFile(out);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** POST /join-video : `inputs` (adresses signees des videos des ecrans, https), `upload` (adresse de depot). */
+async function handleJoin(request, response) {
+  if (!authorized(request.headers.authorization)) return send(response, 401, { error: "non autorise" });
+  const started = Date.now();
+  try {
+    const input = await readJson(request);
+    const inputs = Array.isArray(input.inputs) ? input.inputs.map(cleanUpload) : [];
+    const target = cleanUpload(input.upload);
+    if (inputs.length === 0 || inputs.length > MAX_SLIDES || inputs.some((url) => url === null) || !target) return send(response, 400, { error: "entrees invalides" });
+    const job = await videoJobs.run(async () => {
+      const mp4 = await joinVideos(inputs);
+      await upload(target, mp4);
+      return mp4.length;
+    });
+    if (!job) return send(response, 503, { error: "service occupe, reessaie" });
+    send(response, 200, { ms: Date.now() - started, bytes: job.value });
+  } catch (error) {
+    send(response, 422, { error: String(error?.message ?? error).slice(0, 300) });
+  }
+}
+
 export function createServer() {
   return http.createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/health") return send(response, 200, { ok: true, active: jobs.active, waiting: jobs.waiting, videos: { active: videoJobs.active, waiting: videoJobs.waiting } });
     if (request.method === "POST" && request.url === "/render-video") return handleVideo(request, response);
+    if (request.method === "POST" && request.url === "/join-video") return handleJoin(request, response);
     if (request.method !== "POST" || request.url !== "/render") return send(response, 404, { error: "introuvable" });
     if (!authorized(request.headers.authorization)) return send(response, 401, { error: "non autorise" });
 
